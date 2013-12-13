@@ -611,6 +611,33 @@ Message_struct['RO_ACCESS_REPORT'] = {
     'decode': decode_ROAccessReport
 }
 
+# 16.1.17 ADD_ACCESSSPEC
+class ADD_ACCESSSPEC (ReaderCommand):
+    msg_type = 40
+
+# 16.1.18 ADD_ACCESSSPEC_RESPONSE
+# 16.1.19 DELETE_ACCESSSPEC
+# 16.1.20 DELETE_ACCESSSPEC_RESPONSE
+# 16.1.21 ENABLE_ACCESSSPEC
+# 16.1.22 ENABLE_ACCESSSPEC_RESPONSE
+# 16.1.23 DISABLE_ACCESSSPEC
+# 16.1.24 DISABLE_ACCESSSPEC_RESPONSE
+# 16.1.25 GET_ACCESSSPECS
+# 16.1.26 GET_ACCESSSPECS_RESPONSE
+
+def encode_AccessSpec (par):
+    # TODO implement me
+    msgtype = Message_struct['AccessSpec']['type']
+    data = ''
+    return data
+
+Message_struct['ACCESS_SPEC'] = {
+    'type': X,
+    'fields': [
+    ],
+    'encode': encode_AccessSpec
+}
+
 # 16.1.33 READER_EVENT_NOTIFICATION
 def decode_ReaderEventNotification(data):
     msg = LLRPMessageDict()
