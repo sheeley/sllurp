@@ -4,6 +4,7 @@ import sllurp
 import sllurp.llrp
 import sllurp.llrp_proto
 import sllurp.llrp_errors
+from sllurp.message import SllurpMessage
 import binascii
 import logging
 
@@ -160,6 +161,21 @@ class TestEncodings (unittest.TestCase):
         self.assertEqual(length, len(data))
         flags = int(binascii.hexlify(data[4:]), 16) >> 6
         self.assertEqual(flags, 0b0001011110)
+
+    def test_oo_encoder (self):
+        class M (SllurpMessage):
+            msg_type = 0x123
+        class MShift (SllurpMessage):
+            msg_type = 0x124
+            fields = SllurpMessage.fields + \
+                     (('Field1', '!H', (4, 10)),
+                      ('Field2', '!H', (0, 4)),
+                      ('Field3', '!I', (1, 11)))
+        m = M({})
+        self.assertEqual(binascii.hexlify(m.encode()), '01230000000a00000001')
+        ms = MShift({'Field1': (2 ** 10) - 1, 'Field2': 0xe, 'Field3': 1})
+        self.assertEqual(binascii.hexlify(ms.encode()),
+                '012400000012000000020ffce00000100000')
 
 if __name__ == '__main__':
     unittest.main()

@@ -31,6 +31,7 @@ import time
 from util import *
 import llrp_decoder
 from llrp_errors import *
+from sllurp.message import SllurpMessage
 
 #
 # Define exported symbols
@@ -612,7 +613,7 @@ Message_struct['RO_ACCESS_REPORT'] = {
 }
 
 # 16.1.17 ADD_ACCESSSPEC
-class ADD_ACCESSSPEC (ReaderCommand):
+class ADD_ACCESSSPEC (SllurpMessage):
     msg_type = 40
 
 # 16.1.18 ADD_ACCESSSPEC_RESPONSE
@@ -624,19 +625,6 @@ class ADD_ACCESSSPEC (ReaderCommand):
 # 16.1.24 DISABLE_ACCESSSPEC_RESPONSE
 # 16.1.25 GET_ACCESSSPECS
 # 16.1.26 GET_ACCESSSPECS_RESPONSE
-
-def encode_AccessSpec (par):
-    # TODO implement me
-    msgtype = Message_struct['AccessSpec']['type']
-    data = ''
-    return data
-
-Message_struct['ACCESS_SPEC'] = {
-    'type': X,
-    'fields': [
-    ],
-    'encode': encode_AccessSpec
-}
 
 # 16.1.33 READER_EVENT_NOTIFICATION
 def decode_ReaderEventNotification(data):
