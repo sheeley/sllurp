@@ -8,9 +8,11 @@ from sllurp.message import SllurpMessage
 import binascii
 import logging
 
-logLevel = logging.WARNING
-logging.basicConfig(level=logLevel, format='%(asctime)s: %(levelname)s: %(message)s')
-logging.getLogger('llrpc').setLevel(logLevel)
+logLevel = logging.DEBUG
+logging.basicConfig(level=logLevel,
+        format='%(asctime)s %(name)s: %(levelname)s: %(message)s')
+logger = logging.getLogger('sllurp')
+logger.setLevel(logLevel)
 
 def randhex (numdigits):
     """Return a string with numdigits hexadecimal digits."""
@@ -54,6 +56,14 @@ class TestROSpec (unittest.TestCase):
         self.assertNotEqual(rospec_str, '')
     def tearDown (self):
         pass
+
+class TestReaderEventNotification (unittest.TestCase):
+    def test_decode (self):
+        data = binascii.unhexlify( \
+                '043f0000002149d79d3c00f600170080000c0004edc2172a821400ff0007' \
+                '000002')
+        client = sllurp.llrp.LLRPClient()
+        client.dataReceived(data)
 
 class TestDecodeROAccessReport (unittest.TestCase):
     _r = """
@@ -121,7 +131,7 @@ class TestDecodeROAccessReport (unittest.TestCase):
         self.assertEqual(len(self._r), 3982)
         self.assertEqual(len(self._binr), 1991)
         self._mock_conn = mock_conn(self._binr)
-        logging.debug('{} bytes waiting'.format(self._mock_conn.stream.waiting()))
+        logger.debug('{} bytes waiting'.format(self._mock_conn.stream.waiting()))
         self._client = sllurp.llrp.LLRPClient()
         self._client.addEventCallbacks({
                     'RO_ACCESS_REPORT': [self.tagcb]
