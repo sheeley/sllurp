@@ -8,7 +8,7 @@ from sllurp.message import SllurpMessage
 import binascii
 import logging
 
-logLevel = logging.DEBUG
+logLevel = logging.WARNING
 logging.basicConfig(level=logLevel,
         format='%(asctime)s %(name)s: %(levelname)s: %(message)s')
 logger = logging.getLogger('sllurp')
@@ -138,6 +138,7 @@ class TestDecodeROAccessReport (unittest.TestCase):
                 })
     def test_start(self):
         """Parse the above pile of bytes into a series of LLRP messages."""
+        self._client.state = sllurp.llrp.LLRPClient.STATE_INVENTORYING
         self._client.dataReceived(self._binr)
         self.assertEqual(self._tags_seen, 45)
     def tearDown (self):

@@ -9,6 +9,7 @@ from sllurp.llrp_proto import LLRPROSpec
 
 tagsSeen = 0
 logger = logging.getLogger('sllurp')
+logger.propagate = False
 
 def tagSeenCallback (llrpMsg):
     """Function to run each time the reader reports seeing one or more tags."""
@@ -31,33 +32,33 @@ def main():
             dest='every_n', metavar='N', help='issue a TagReport every N tags')
     parser.add_argument('-a', '--antennas', default='1',
             help='comma-separated list of antennas to enable')
+    parser.add_argument('-l', '--logfile')
     args = parser.parse_args()
 
     logLevel = (args.debug and logging.DEBUG or logging.INFO)
     logger.setLevel(logLevel)
-    sHandler = logging.StreamHandler()
     logFormat = '%(asctime)s %(name)s: %(levelname)s: %(message)s'
-    sHandler.setFormatter(logging.Formatter(logFormat))
-    logger.addHandler(sHandler)
+    formatter = logging.Formatter(logFormat)
+    if args.logfile:
+        fHandler = logging.FileHandler(args.logfile)
+        fHandler.setFormatter(formatter)
+        logger.addHandler(fHandler)
+    else:
+        sHandler = logging.StreamHandler()
+        sHandler.setFormatter(formatter)
+        logger.addHandler(sHandler)
     logger.log(logLevel, 'log level: {}'.format(logging.getLevelName(logLevel)))
 
     enabled_antennas = map(lambda x: int(x.strip()), args.antennas.split(','))
 
     # spawn a thread to talk to the reader
-    reader = llrp.LLRPReaderThread(args.host, args.port)
-    reader.setDaemon(True)
+    reader = llrp.LLRPReaderThread(args.host, args.port, duration=args.time,
+            report_every_n_tags=args.every_n, antennas=enabled_antennas,
+            start_inventory=True, disconnect_when_done=True, standalone=True)
     reader.addCallback('RO_ACCESS_REPORT', tagSeenCallback)
     reader.start()
-    logger.info('Will run inventory for {} seconds'.format(args.time))
-    reader.start_inventory(duration=args.time, report_every_n_tags=args.every_n,
-            antennas=enabled_antennas)
-    time.sleep(args.time + 3)
-    reader.stop_inventory()
-    time.sleep(1)
 
-    reader.disconnect()
     reader.join()
-
     logger.info('Total # of tags seen by callback: {}'.format(tagsSeen))
 
 if __name__ == '__main__':
