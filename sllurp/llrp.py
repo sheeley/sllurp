@@ -116,9 +116,8 @@ class LLRPClient (Protocol):
     STATE_CONNECTED = 3
     STATE_SENT_ADD_ROSPEC = 4
     STATE_SENT_ENABLE_ROSPEC = 5
-    STATE_SENT_DELETE_ROSPEC = 6
-    STATE_INVENTORYING = 7
-    STATE_STOPPING_POLITELY = 8
+    STATE_INVENTORYING = 6
+    STATE_SENT_DELETE_ROSPEC = 7
 
     def __init__ (self, duration=None, report_every_n_tags=None, antennas=(1,),
             start_inventory=True, disconnect_when_done=True, standalone=False):
@@ -154,6 +153,7 @@ class LLRPClient (Protocol):
         self.state = LLRPClient.STATE_DISCONNECTED
         if self.standalone:
             reactor.callFromThread(reactor.stop)
+        logger.info('disconnected')
 
     def addEventCallbacks (self, callbacks):
         self.eventCallbacks.update(callbacks)
@@ -166,13 +166,12 @@ class LLRPClient (Protocol):
         ret = lmsg.remainder
         logger.debug('remaining bytes: {}'.format(len(ret)))
 
-        stop = False
-
-        # don't call callbacks if in these erroneous states
         if msgName == 'RO_ACCESS_REPORT' and \
                     self.state != LLRPClient.STATE_INVENTORYING:
-            logger.debug('ignoring RO_ACCESS_REPORT')
-            stop = True
+            logger.debug('ignoring RO_ACCESS_REPORT because not inventorying')
+            return ret
+
+        run_callbacks = True
 
         #######
         # LLRP client state machine follows.  Beware: gets thorny.  Note the
@@ -202,7 +201,7 @@ class LLRPClient (Protocol):
             else:
                 logger.error('unexpected message {} while' \
                         ' connecting'.format(msgName))
-                stop = True
+                run_callbacks = False
 
         # in state SENT_ADD_ROSPEC, expect only ADD_ROSPEC_RESPONSE; respond to
         # favorable ADD_ROSPEC_RESPONSE by enabling the added ROSpec and
@@ -220,15 +219,15 @@ class LLRPClient (Protocol):
                         }}))
                     self.state = LLRPClient.STATE_SENT_ENABLE_ROSPEC
                 else:
-                    logger.warn('ENABLE_ROSPEC failed with status {}: {}' \
+                    logger.warn('ADD_ROSPEC failed with status {}: {}' \
                             .format(d['LLRPStatus']['StatusCode'],
                                 d['LLRPStatus']['ErrorDescription']))
-                    stop = True
+                    run_callbacks = False
                     self.stopPolitely()
             else:
                 logger.error('unexpected response {} ' \
                         ' when adding ROSpec'.format(msgName))
-                stop = True
+                run_callbacks = False
 
         # in state SENT_ENABLE_ROSPEC, expect only ENABLE_ROSPEC_RESPONSE;
         # respond to favorable ENABLE_ROSPEC_RESPONSE by starting the enabled
@@ -237,8 +236,7 @@ class LLRPClient (Protocol):
             if msgName == 'ENABLE_ROSPEC_RESPONSE':
                 d = lmsg.msgdict['ENABLE_ROSPEC_RESPONSE']
                 if d['LLRPStatus']['StatusCode'] == 'Success':
-                    logger.info('successfully enabled ROSpec; starting' \
-                            ' inventory.')
+                    logger.info('starting inventory')
                     self.state = LLRPClient.STATE_INVENTORYING
                     if self.duration:
                         reactor.callFromThread(reactor.callLater, self.duration,
@@ -247,21 +245,20 @@ class LLRPClient (Protocol):
                     logger.warn('ENABLE_ROSPEC failed with status {}: {}' \
                             .format(d['LLRPStatus']['StatusCode'],
                                 d['LLRPStatus']['ErrorDescription']))
-                    stop = True
+                    run_callbacks = False
                     self.stopPolitely()
             else:
                 logger.error('unexpected response {} ' \
                         ' when enabling ROSpec'.format(msgName))
-                stop = True
+                run_callbacks = False
 
         elif self.state == LLRPClient.STATE_INVENTORYING:
             if msgName not in ('RO_ACCESS_REPORT', 'READER_EVENT_NOTIFICATION'):
                 logger.error('unexpected message {} while' \
                         ' inventorying'.format(msgName))
-                stop = True
+                run_callbacks = False
 
-        elif self.state in (LLRPClient.STATE_SENT_DELETE_ROSPEC,
-                LLRPClient.STATE_STOPPING_POLITELY):
+        elif self.state == LLRPClient.STATE_SENT_DELETE_ROSPEC:
             if msgName == 'DELETE_ROSPEC_RESPONSE':
                 d = lmsg.msgdict['DELETE_ROSPEC_RESPONSE']
                 if d['LLRPStatus']['StatusCode'] == 'Success':
@@ -272,7 +269,7 @@ class LLRPClient (Protocol):
                     logger.warn('DELETE_ROSPEC failed with status {}: {}' \
                             .format(d['LLRPStatus']['StatusCode'],
                                 d['LLRPStatus']['ErrorDescription']))
-                    stop = True
+                    run_callbacks = False
                     logger.info('disconnecting')
 
                     # no use trying to stop politely if DELETE_ROSPEC has
@@ -281,16 +278,16 @@ class LLRPClient (Protocol):
             else:
                 logger.error('unexpected response {} ' \
                         ' when deleting ROSpec'.format(msgName))
-                stop = True
+                run_callbacks = False
 
-        if not stop:
+        if run_callbacks:
             for fn in self.eventCallbacks[msgName]:
                 fn(lmsg)
 
         return ret
 
     def dataReceived (self, data):
-        logger.debug('Got {} bytes from reader: {}'.format(len(data),
+        logger.debug('got {} bytes from reader: {}'.format(len(data),
                     data.encode('hex')))
         try:
             while data:
@@ -336,7 +333,7 @@ class LLRPClient (Protocol):
                 'ID':   0,
                 'ROSpecID': 0
             }}))
-        self.state = LLRPClient.STATE_STOPPING_POLITELY
+        self.state = LLRPClient.STATE_SENT_DELETE_ROSPEC
 
     def sendLLRPMessage (self, llrp_msg):
         reactor.callFromThread(self.sendMessage, llrp_msg.msgbytes)
@@ -360,16 +357,16 @@ class LLRPReaderThread (Thread):
         self.inventory_params = dict(kwargs)
 
     def cbConnected (self, connectedProtocol):
-        logger.info('Connected to {}:{}'.format(self.host, self.port))
+        logger.info('connected to {}:{}'.format(self.host, self.port))
         self.protocol = connectedProtocol
         self.protocol.addEventCallbacks(self.callbacks)
 
     def ebConnectError (self, reason):
-        logger.debug('Connection error: {}'.format(reason))
+        logger.debug('connection error: {}'.format(reason))
         pass
 
     def run (self):
-        logger.debug('Will connect to {}:{}'.format(self.host, self.port))
+        logger.debug('will connect to {}:{}'.format(self.host, self.port))
         cc = ClientCreator(reactor, LLRPClient, **self.inventory_params)
         whenConnected = cc.connectTCP(self.host, self.port)
         whenConnected.addCallbacks(self.cbConnected, self.ebConnectError)
