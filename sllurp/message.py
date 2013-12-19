@@ -76,3 +76,7 @@ class SllurpMessage (object):
     def next_message_id (_):
         SllurpMessage.message_id += 1
         return SllurpMessage.message_id
+
+class SllurpMessageParameter (SllurpMessage):
+    # XXX
+    pass
