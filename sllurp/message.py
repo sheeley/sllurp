@@ -3,18 +3,21 @@ import struct
 class EncodingError (Exception):
     pass
 
+class DecodingError (Exception):
+    pass
+
 class SllurpMessage (object):
     msg_type = None
     message_id = 0
 
     fields = (
-        # (name, struct fmt, (start bit index, len))
-        ('MessageType', '!H', (6, 10)),
-        ('MessageLength', '!I', (0, 32)),
-        ('MessageID', '!I', (0, 32)),
+        # (name, struct fmt, start bit index, length (bits), optional, multiple)
+        ('MessageType',     '!H', 6, 10, False, False),
+        ('MessageLength',   '!I', 0, 32, False, False),
+        ('MessageID',       '!I', 0, 32, False, False),
     )
 
-    def __init__ (self, msg_dict):
+    def __init__ (self, msg_dict=None, bytestr=None):
         """
         Arguments:
             msg_dict: A dictionary of field values.  Must contain values for all
@@ -33,7 +36,9 @@ class SllurpMessage (object):
             add_accessspec = ADD_ACCESSSPEC({'AccessSpec': access_spec})
             as_bytes = add_accessspec.encode()
         """
+        assert (bool(msg_dict is not None) ^ bool(bytestr is not None))
         self.msg_dict = msg_dict
+        self.bytestr = bytestr
 
     def encode (self):
         """Returns the binary LLRP representation of this SllurpMessage.
@@ -51,24 +56,32 @@ class SllurpMessage (object):
 
         # iterate through all fields in the message type, building up the data
         # string one field at a time
-        for field_name, struct_fmt, (bit_index, len_bits) in self.fields:
-            if field_name == 'MessageLength':
+        for fname, fmt, bit_index, len_bits, optional, multiple in self.fields:
+            # save the position of the MessageLength field to patch up later
+            if fname == 'MessageLength':
                 len_field_pos = len(data)
-            value = self.msg_dict[field_name]
-            fieldwidth_bits = 8 * struct.calcsize(struct_fmt)
+            try:
+                value = self.msg_dict[fname]
+            except KeyError:
+                if optional:
+                    continue # skip this field
+                raise EncodingError('Required field {} is ' \
+                        'missing'.format(fname))
+            fieldwidth_bits = 8 * struct.calcsize(fmt)
             assert(len_bits <= fieldwidth_bits)
             shiftwidth = fieldwidth_bits - bit_index - len_bits
             if isinstance(value, int) and shiftwidth:
                 value <<= shiftwidth
-            data += struct.pack(struct_fmt, value)
+            data += struct.pack(fmt, value)
 
         # patch up MessageLength field with the final length
+        assert (len_field_pos is not None)
         data = data[ : len_field_pos] + struct.pack('!I', len(data)) + \
             data[len_field_pos + struct.calcsize('!I') : ]
 
         return data
 
-    def decode (self, as_bytes):
+    def decode (self, bytestr):
         # TODO: write me
         return {}
 

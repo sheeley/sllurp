@@ -173,20 +173,36 @@ class TestEncodings (unittest.TestCase):
         flags = int(binascii.hexlify(data[4:]), 16) >> 6
         self.assertEqual(flags, 0b0001011110)
 
-    def test_oo_encoder (self):
+class TestOOEncodings (unittest.TestCase):
+    def test_encode_empty (self):
         class M (SllurpMessage):
             msg_type = 0x123
+        m = M({})
+        self.assertEqual(binascii.hexlify(m.encode()), '01230000000a00000001')
+
+    def test_encode_shifted_fields (self):
         class MShift (SllurpMessage):
             msg_type = 0x124
             fields = SllurpMessage.fields + \
-                     (('Field1', '!H', (4, 10)),
-                      ('Field2', '!H', (0, 4)),
-                      ('Field3', '!I', (1, 11)))
-        m = M({})
-        self.assertEqual(binascii.hexlify(m.encode()), '01230000000a00000001')
+                     (('Field1', '!H', 4, 10, False, False),
+                      ('Field2', '!H', 0, 4, False, False),
+                      ('Field3', '!I', 1, 11, False, False))
         ms = MShift({'Field1': (2 ** 10) - 1, 'Field2': 0xe, 'Field3': 1})
         self.assertEqual(binascii.hexlify(ms.encode()),
-                '012400000012000000020ffce00000100000')
+                '0124' '00000012' '00000002' '0ffc' 'e000' '00100000')
+
+    def test_optional_fields (self):
+        class MOptional (SllurpMessage):
+            msg_type = 0x125
+            fields = SllurpMessage.fields + \
+                     (('Field1', '!H', 0, 16, True, False),
+                      ('Field2', '!H', 0, 4, False, False))
+        mo = MOptional({'Field2': 0xe})
+        mo2 = MOptional({'Field1': (2**10) - 1, 'Field2': 0xc})
+        self.assertEqual(binascii.hexlify(mo.encode()),
+                '0125' '0000000c' '00000003' 'e000')
+        self.assertEqual(binascii.hexlify(mo2.encode()),
+                '0125' '0000000e' '00000004' '03ff' 'c000')
 
 if __name__ == '__main__':
     unittest.main()
