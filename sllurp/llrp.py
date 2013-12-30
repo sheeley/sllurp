@@ -11,7 +11,7 @@ from llrp_proto import LLRPROSpec, LLRPError, Message_struct, \
 import copy
 from util import *
 from twisted.internet import reactor
-from twisted.internet.protocol import Protocol, ClientCreator
+from twisted.internet.protocol import Protocol, ClientFactory
 from twisted.internet.error import ReactorAlreadyRunning
 
 LLRP_PORT = 5084
@@ -147,13 +147,16 @@ class LLRPClient (Protocol):
 
     def connectionMade(self):
         logger.debug('socket connected')
+        self.transport.setTcpKeepAlive(True)
 
     def connectionLost(self, reason):
-        logger.debug('socket closed: {}'.format(reason))
+        logger.debug('reader disconnected: {}'.format(reason))
         self.state = LLRPClient.STATE_DISCONNECTED
         if self.standalone:
-            reactor.callFromThread(reactor.stop)
-        logger.info('disconnected')
+            try:
+                reactor.callFromThread(reactor.stop)
+            except ReactorNotRunning:
+                pass
 
     def addEventCallbacks (self, callbacks):
         self.eventCallbacks.update(callbacks)
@@ -262,6 +265,7 @@ class LLRPClient (Protocol):
             if msgName == 'DELETE_ROSPEC_RESPONSE':
                 d = lmsg.msgdict['DELETE_ROSPEC_RESPONSE']
                 if d['LLRPStatus']['StatusCode'] == 'Success':
+                    logger.info('reader finished inventory')
                     self.state = LLRPClient.STATE_DISCONNECTED
                     if self.disconnect_when_done:
                         self.transport.loseConnection()
@@ -326,6 +330,7 @@ class LLRPClient (Protocol):
 
     def stopPolitely (self):
         """Delete all active ROSpecs."""
+        logger.info('stopping politely')
         self.sendLLRPMessage(LLRPMessage(msgdict={
             'DELETE_ROSPEC': {
                 'Ver':  1,
@@ -341,35 +346,68 @@ class LLRPClient (Protocol):
     def sendMessage (self, msg):
         self.transport.write(msg)
 
+class LLRPClientFactory (ClientFactory):
+    def __init__ (self, parent, callbacks, reconnect=False, **kwargs):
+        self.parent = parent
+        self.callbacks = callbacks
+        self.client_args = kwargs
+        self.reconnect = reconnect
+        self.reconnect_delay = 1.0 # seconds
+        self.standalone = kwargs['standalone']
+
+    def startedConnecting(self, connector):
+        logger.info('connecting...')
+
+    def buildProtocol(self, addr):
+        proto = LLRPClient(**self.client_args)
+        proto.addEventCallbacks(self.callbacks)
+        self.parent.protocol = proto
+        return proto
+
+    def clientConnectionLost(self, connector, reason):
+        logger.info('lost connection: {}'.format(reason))
+        ClientFactory.clientConnectionLost(self, connector, reason)
+        if self.reconnect:
+            reactor.callFromThread(time.sleep, self.reconnect_delay)
+            connector.connect()
+
+    def clientConnectionFailed(self, connector, reason):
+        logger.info('connection failed: {}'.format(reason))
+        ClientFactory.clientConnectionFailed(self, connector, reason)
+        if self.reconnect:
+            reactor.callFromThread(time.sleep, self.reconnect_delay)
+            connector.connect()
+        else:
+            if self.standalone:
+                try:
+                    reactor.callFromThread(reactor.stop)
+                except ReactorNotRunning:
+                    pass
+
 class LLRPReaderThread (Thread):
     """ Thread object that connects input and output message queues to a
         socket."""
     rospec = None
     host = None
     port = None
-    protocol = None
     callbacks = defaultdict(list)
 
-    def __init__ (self, host, port=LLRP_PORT, **kwargs):
+    def __init__ (self, host, port=LLRP_PORT, reconnect=False,
+            connect_timeout=3, **kwargs):
         super(LLRPReaderThread, self).__init__()
         self.host = host
         self.port = port
         self.inventory_params = dict(kwargs)
-
-    def cbConnected (self, connectedProtocol):
-        logger.info('connected to {}:{}'.format(self.host, self.port))
-        self.protocol = connectedProtocol
-        self.protocol.addEventCallbacks(self.callbacks)
-
-    def ebConnectError (self, reason):
-        logger.debug('connection error: {}'.format(reason))
-        pass
+        self.protocol = None
+        self.reconnect = reconnect
+        self.connect_timeout = connect_timeout
 
     def run (self):
         logger.debug('will connect to {}:{}'.format(self.host, self.port))
-        cc = ClientCreator(reactor, LLRPClient, **self.inventory_params)
-        whenConnected = cc.connectTCP(self.host, self.port)
-        whenConnected.addCallbacks(self.cbConnected, self.ebConnectError)
+        client_factory = LLRPClientFactory(self, self.callbacks,
+                reconnect=self.reconnect, **self.inventory_params)
+        reactor.connectTCP(self.host, self.port, client_factory,
+                timeout=self.connect_timeout)
         try:
             if self.inventory_params['standalone']:
                 reactor.run(False)
@@ -395,4 +433,7 @@ class LLRPReaderThread (Thread):
 
     def disconnect (self):
         logger.debug('stopping reactor')
-        reactor.callFromThread(reactor.stop)
+        try:
+            reactor.callFromThread(reactor.stop)
+        except ReactorNotRunning:
+            pass
