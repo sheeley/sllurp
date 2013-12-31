@@ -67,12 +67,17 @@ class SllurpMessage (object):
                     continue # skip this field
                 raise EncodingError('Required field {} is ' \
                         'missing'.format(fname))
-            fieldwidth_bits = 8 * struct.calcsize(fmt)
-            assert(len_bits <= fieldwidth_bits)
-            shiftwidth = fieldwidth_bits - bit_index - len_bits
-            if isinstance(value, int) and shiftwidth:
-                value <<= shiftwidth
-            data += struct.pack(fmt, value)
+            if multiple and isinstance(value, (list, tuple)):
+                values = value
+            else:
+                values = (value,)
+            for val in values:
+                fieldwidth_bits = 8 * struct.calcsize(fmt)
+                assert(len_bits <= fieldwidth_bits)
+                shiftwidth = fieldwidth_bits - bit_index - len_bits
+                if isinstance(val, int) and shiftwidth:
+                    val <<= shiftwidth
+                data += struct.pack(fmt, val)
 
         # patch up MessageLength field with the final length
         assert (len_field_pos is not None)
