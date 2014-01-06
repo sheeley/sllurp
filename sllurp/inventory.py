@@ -13,10 +13,14 @@ logger = logging.getLogger('sllurp')
 logger.propagate = False
 
 def tagSeenCallback (llrpMsg):
-    """Function to run each time the reader reports seeing one or more tags."""
+    """Function to run each time the reader reports seeing tags."""
     global tagsSeen
     tags = llrpMsg.msgdict['RO_ACCESS_REPORT']['TagReportData']
-    logger.info('saw tag(s): {}'.format(pprint.pformat(tags)))
+    if len(tags):
+        logger.info('saw tag(s): {}'.format(pprint.pformat(tags)))
+    else:
+        logger.info('no tags seen')
+        return
     for tag in tags:
         tagsSeen += tag['TagSeenCount'][0]
 
@@ -33,6 +37,8 @@ def main():
             dest='every_n', metavar='N', help='issue a TagReport every N tags')
     parser.add_argument('-a', '--antennas', default='1',
             help='comma-separated list of antennas to enable')
+    parser.add_argument('-X', '--tx-power', default=91, type=int,
+            dest='tx_power', help='Transmit power (reader model dependent)')
     parser.add_argument('-l', '--logfile')
     parser.add_argument('-r', '--reconnect', action='store_true',
             default=False, help='reconnect on connection failure or loss')
@@ -58,7 +64,7 @@ def main():
     reader = llrp.LLRPReaderThread(args.host, args.port, duration=args.time,
             report_every_n_tags=args.every_n, antennas=enabled_antennas,
             start_inventory=True, disconnect_when_done=True, standalone=True,
-            reconnect=args.reconnect)
+            tx_power=args.tx_power, reconnect=args.reconnect)
     reader.setDaemon(True)
     reader.addCallback('RO_ACCESS_REPORT', tagSeenCallback)
     reader.start()
