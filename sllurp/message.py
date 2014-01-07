@@ -10,6 +10,9 @@ class SllurpMessage (object):
     msg_type = None
     message_id = 0
 
+    # constants
+    HEADER_LENGTH = struct.calcsize('!HII')
+
     fields = (
         # (name, struct fmt, start bit index, length (bits), optional, multiple)
         ('MessageType',     '!H', 6, 10, False, False),
@@ -39,6 +42,7 @@ class SllurpMessage (object):
         assert (bool(msg_dict is not None) ^ bool(bytestr is not None))
         self.msg_dict = msg_dict
         self.bytestr = bytestr
+        self.__name__ = self.__class__.__name__
 
     def encode (self):
         """Returns the binary LLRP representation of this SllurpMessage.
@@ -86,9 +90,34 @@ class SllurpMessage (object):
 
         return data
 
-    def decode (self, bytestr):
-        # TODO: write me
-        return {}
+    def decode (self):
+        """Returns the dictionary representation of this SllurpMessage."""
+
+        mdict = {}
+        try:
+            mid, mty, mlen = struct.unpack('!HII',
+                    self.bytestr[:struct.calcsize('!HII')])
+        except struct.error:
+            raise DecodingError('Error unpacking mesage header')
+        if mty != self.msg_type:
+            raise DecodingError('Wrong message type {} for {};' \
+                    ' expected {}'.format(mty, self.__name__, self.msg_type))
+        mdict['MessageID'] = mid
+        mdict['MessageType'] = mty
+        mdict['MessageLength'] = mlen
+        pos = SllurpMessage.HEADER_LENGTH
+
+        # XXX unpack fields -- this gets tricky
+        for fname, fmt, bit_index, len_bits, optional, multiple in self.fields:
+            fsz = struct.calcsize(fmt)
+            try:
+                val = struct.unpack(fmt, self.bytestr[pos:pos+fsz])
+                mdict[fname] = int(val)
+            except struct.error:
+                raise DecodingError('Problem unpacking field {}'.format(fname))
+            pos += fsz
+
+        return mdict
 
     @classmethod
     def next_message_id (_):
