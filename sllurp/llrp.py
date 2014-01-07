@@ -10,7 +10,7 @@ from llrp_proto import LLRPROSpec, LLRPError, Message_struct, \
          Message_Type2Name, llrp_data2xml, LLRPMessageDict
 import copy
 from util import *
-from twisted.internet import reactor
+from twisted.internet import reactor, task
 from twisted.internet.protocol import Protocol, ClientFactory
 from twisted.internet.error import ReactorAlreadyRunning
 
@@ -120,14 +120,16 @@ class LLRPClient (Protocol):
     STATE_SENT_DELETE_ROSPEC = 7
 
     def __init__ (self, duration=None, report_every_n_tags=None, antennas=(1,),
-            tx_power=91, start_inventory=True, disconnect_when_done=True,
-            standalone=False):
+            tx_power=91, modulation='M4', tari=0, start_inventory=True,
+            disconnect_when_done=True, standalone=False):
         self.state = LLRPClient.STATE_DISCONNECTED
         e = self.eventCallbacks = defaultdict(list)
         e['READER_EVENT_NOTIFICATION'].append(self.readerEventCallback)
         self.rospec = None
         self.report_every_n_tags = report_every_n_tags
         self.tx_power = tx_power
+        self.modulation = modulation
+        self.tari = tari
         self.antennas = antennas
         self.duration = duration
         self.start_inventory = start_inventory
@@ -327,7 +329,8 @@ class LLRPClient (Protocol):
         # behavior, and start running it on the reader
         self.rospec = LLRPROSpec(1, duration_sec=self.duration,
                 report_every_n_tags=self.report_every_n_tags,
-                tx_power=self.tx_power, antennas=self.antennas)
+                tx_power=self.tx_power, modulation=self.modulation,
+                tari=self.tari, antennas=self.antennas)
         logger.debug('ROSpec: {}'.format(self.rospec))
 
     def stopPolitely (self):
@@ -341,6 +344,16 @@ class LLRPClient (Protocol):
                 'ROSpecID': 0
             }}))
         self.state = LLRPClient.STATE_SENT_DELETE_ROSPEC
+
+    def pause (self, duration_seconds):
+        """Pause an inventory operation for a set amount of time."""
+        if self.state != LLRPClient.STATE_INVENTORYING:
+            logger.debug('cannot pause() if not inventorying; ignoring')
+            return
+        logger.info('pausing for {} seconds'.format(duration_seconds))
+        self.stopPolitely()
+        d = task.deferLater(reactor, duration_seconds, reactor.callFromThread,
+                self.startInventory)
 
     def sendLLRPMessage (self, llrp_msg):
         reactor.callFromThread(self.sendMessage, llrp_msg.msgbytes)
