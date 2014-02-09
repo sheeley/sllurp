@@ -2142,7 +2142,7 @@ class LLRPROSpec(dict):
                     'EnableChannelIndex': False,
                     'EnablePeakRRSI': True,
                     'EnableFirstSeenTimestamp': False,
-                    'EnableLastSeenTimestamp': False,
+                    'EnableLastSeenTimestamp': True,
                     'EnableTagSeenCount': True,
                     'EnableAccessSpecID': False,
                 },
