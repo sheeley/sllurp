@@ -11,6 +11,7 @@ from sllurp.llrp_proto import LLRPROSpec, ModeIndex_Name2Type
 tagsSeen = 0
 logger = logging.getLogger('sllurp')
 logger.propagate = False
+reader = None
 
 def tagSeenCallback (llrpMsg):
     """Function to run each time the reader reports seeing tags."""
@@ -24,7 +25,17 @@ def tagSeenCallback (llrpMsg):
     for tag in tags:
         tagsSeen += tag['TagSeenCount'][0]
 
+def connectedCallback (llrpMsg):
+    logger.debug('Got a READER_EVENT_NOTIFICATION')
+    if not reader:
+        return
+    # stop all inventory, then start inventory after 3 seconds
+    reader.stop_inventory(None)
+    reactor.callFromThread(reactor.callLater, 1, reader.start_inventory)
+    reactor.callFromThread(reactor.callLater, 2, reader.set_disconnect_flag)
+
 def main():
+    global reader
     parser = argparse.ArgumentParser(description='Simple RFID Reader Inventory')
     parser.add_argument('host', help='hostname or IP address of RFID reader')
     parser.add_argument('-p', '--port', default=llrp.LLRP_PORT,
@@ -68,11 +79,12 @@ def main():
     # spawn a thread to talk to the reader
     reader = llrp.LLRPReaderThread(args.host, args.port, duration=args.time,
             report_every_n_tags=args.every_n, antennas=enabled_antennas,
-            start_inventory=True, disconnect_when_done=True, standalone=True,
+            start_inventory=False, disconnect_when_done=False, standalone=True,
             tx_power=args.tx_power, modulation=args.modulation, tari=args.tari,
             reconnect=args.reconnect)
     reader.setDaemon(True)
     reader.addCallback('RO_ACCESS_REPORT', tagSeenCallback)
+    reader.addCallback('READER_EVENT_NOTIFICATION', connectedCallback)
     reader.start()
 
     # check every 0.1 seconds whether thread is done with its work (or whether

@@ -453,6 +453,12 @@ class LLRPReaderThread (Thread):
             return
         self.protocol.stopPolitely()
 
+    def set_disconnect_flag (self, val=True):
+        if not self.protocol:
+            logger.warn('set_disconnect_flag called on disconnected client')
+            return
+        self.protocol.disconnect_when_done = val
+
     def addCallback (self, eventName, eventCb):
         self.callbacks[eventName].append(eventCb)
 
